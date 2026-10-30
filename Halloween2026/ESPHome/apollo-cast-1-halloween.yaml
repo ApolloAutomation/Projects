@@ -1,0 +1,72 @@
+# Example CAST-1 device YAML for the Halloween porch display: the strip is
+# split into 3 segments of 7 LEDs, one per blueprint stage.
+# Copy the light: section into your own device YAML in ESPHome Device
+# Builder; keep your own name, encryption key and WiFi lines.
+
+substitutions:
+  name: apollo-cast-1-xxxxxx
+  friendly_name: Apollo CAST-1 xxxxxx
+
+packages:
+  ApolloAutomation.CAST-1: github://ApolloAutomation/CAST-1/Integrations/ESPHome/CAST-1.yaml
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+
+api:
+  encryption:
+    # Keep the key Device Builder generated for your device
+    key: "YOUR_ENCRYPTION_KEY"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+light:
+  # to is inclusive and the first LED is 0; every segment has to fit inside
+  # the LED Strip Count set in Home Assistant
+  - platform: partition
+    name: "LED Segment 1"
+    segments:
+      - id: led_strip
+        from: 0
+        to: 6
+    default_transition_length: 0s
+    # A light restores its effect by position, so add new effects at the end
+    effects: &led_segment_effects
+      # Effect A and B follow the strip's Pattern and Speed settings
+      - addressable_lambda:
+          name: "Effect A"
+          update_interval: 15ms
+          lambda: "id(led_strip_slot_effect)(it, current_color, initial_run, 0);"
+      - addressable_lambda:
+          name: "Effect B"
+          update_interval: 15ms
+          lambda: "id(led_strip_slot_effect)(it, current_color, initial_run, 1);"
+      # Built-in effects run at a fixed speed
+      - addressable_rainbow:
+          name: "Rainbow"
+      - addressable_twinkle:
+          name: "Twinkle"
+      - addressable_fireworks:
+          name: "Fireworks"
+      - pulse:
+          name: "Pulse"
+  - platform: partition
+    name: "LED Segment 2"
+    segments:
+      - id: led_strip
+        from: 7
+        to: 13
+    default_transition_length: 0s
+    effects: *led_segment_effects
+  - platform: partition
+    name: "LED Segment 3"
+    segments:
+      - id: led_strip
+        from: 14
+        to: 20
+    default_transition_length: 0s
+    effects: *led_segment_effects
