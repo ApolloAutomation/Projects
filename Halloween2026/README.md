@@ -71,7 +71,7 @@ Each stage is a group of lights that turns on as the visitor gets closer. Click 
 ## Distance-Based
 
 - Mount the radar by the door, facing out, so the distance shrinks as a visitor walks up.
-- **Distance sensor:** use the radar's **Moving Distance**, which ignores still objects such as plants or parked cars.
+- **Distance sensor:** use the radar's **Moving Distance**, which ignores still objects such as plants or parked cars. On an R PRO-1, enable **LD2412 Moving Distance** on its device page first; it's hidden by default.
 - **Target sensor:** use the radar's overall presence or target sensor, which stays on for people standing still.
 - **Distances:** give each stage the distance at which it turns on, and set a smaller **Finale distance**. Use the unit your sensor shows in Home Assistant, such as inches or cm. Stages can be added in any order; they're sorted farthest first.
 - **Spacing:** LD2410 radars measure in steps of about 75 cm (30 in), so space stages at least that far apart.
@@ -91,7 +91,7 @@ Each stage is a group of lights that turns on as the visitor gets closer. Click 
 - **Sound player:** set it under **Sound player and options** to play every sound on one speaker. If you play music through Music Assistant, pick the speaker's own media player, not the Music Assistant one. Otherwise Music Assistant pauses the music for each sound instead of playing over it.
 - **Ducking on a CAST-1:** music ducks under each sound, by 40 dB by default. Raise the CAST-1's **Announcement Ducking** slider in Home Assistant to keep the music louder (see [Announcements](https://github.com/ApolloAutomation/CAST-1#announcements)).
 - **Light delay after a sound:** if your speaker starts sounds late, this makes the lights wait so they land together.
-- **Volume:** **Set the volume during a sequence** changes the speaker's volume while a sequence runs, then puts it back.
+- **Volume:** **Set the volume during a sequence** changes the speaker's volume, and unmutes it, while a sequence runs. Both go back once the last sound has played.
 - **CAST-1 Music Mode:** add the strip's **LED Strip Music Mode** switch to **Switches to pause during a sequence**. Otherwise music starting or stopping can take over the strip mid-show. It's turned back on afterwards.
 - **Enable switch:** set one, such as a Halloween mode toggle, to turn the display on and off without editing the automation.
 

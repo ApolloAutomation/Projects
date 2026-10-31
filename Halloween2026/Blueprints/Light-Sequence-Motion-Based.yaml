@@ -22,6 +22,7 @@ blueprint:
     speaker ducks under them instead of stopping.
   domain: automation
   author: Apollo Automation
+  source_url: https://github.com/ApolloAutomation/Projects/blob/main/Halloween2026/Blueprints/Light-Sequence-Motion-Based.yaml
   homeassistant:
     min_version: 2025.7.0
   input:
@@ -466,9 +467,10 @@ blueprint:
         set_volume:
           name: Set the volume during a sequence
           description: >-
-            Sets the sound player's volume when a sequence starts and puts it
-            back when the sequence ends. This is the player's only volume, so
-            music playing on it changes too. Needs a Sound player above.
+            Sets the sound player's volume, and unmutes it, when a sequence
+            starts. Both go back once its last sound has played, or by the end
+            of the Cooldown. This is the player's only volume, so music playing
+            on it changes too. Needs a Sound player above.
           default: false
           selector:
             boolean:
@@ -535,6 +537,7 @@ variables:
   rearm: !input rearm
   step_timeout: !input step_timeout
   transition_s: !input transition
+  cooldown_s: !input cooldown
   sound_delay: !input sound_delay
   sound_player: !input sound_player
   set_volume: !input set_volume
@@ -651,6 +654,7 @@ actions:
       started: false
       paused: []
       prev_volume: null
+      prev_muted: null
 
   # idx is the last lit stage (-1 before the first). Each pass waits for the
   # next step (the next stage, or the finale after the last one): for its
@@ -660,6 +664,8 @@ actions:
   - variables:
       idx: -1
       outcome: ""
+      # When the last sound was sent, so the volume can wait for it to end
+      sound_sent: 0
   - repeat:
       while:
         - condition: template
@@ -706,6 +712,8 @@ actions:
                       {{ expand(pause_entities) | selectattr('state', 'eq', 'on') | map(attribute='entity_id') | list }}
                     prev_volume: >-
                       {{ state_attr(sound_player, 'volume_level') if set_volume and sound_player != '' else none }}
+                    prev_muted: >-
+                      {{ state_attr(sound_player, 'is_volume_muted') if set_volume and sound_player != '' else none }}
                 - if:
                     - condition: template
                       value_template: "{{ paused | count > 0 }}"
@@ -722,6 +730,17 @@ actions:
                         entity_id: "{{ sound_player }}"
                       data:
                         volume_level: "{{ (sound_volume | float(60)) / 100 }}"
+                      continue_on_error: true
+                # Volume changes don't unmute on ESPHome 2026.10 and newer
+                - if:
+                    - condition: template
+                      value_template: "{{ prev_muted is true }}"
+                  then:
+                    - action: media_player.volume_mute
+                      target:
+                        entity_id: "{{ sound_player }}"
+                      data:
+                        is_volume_muted: false
                       continue_on_error: true
                 - if:
                     - condition: template
@@ -742,6 +761,8 @@ actions:
               else:
                 - variables:
                     snd: "{{ stages[target].sound }}"
+                    sound_sent: >-
+                      {{ now().timestamp() if snd.id != '' and snd.player != '' else sound_sent }}
                     jobs: >-
                       {%- set ns = namespace(out=[]) -%}
                       {%- for i in range(idx + 1, target + 1) -%}
@@ -783,14 +804,24 @@ actions:
                                 data: >-
                                   {%- set fx = state_attr(repeat.item.light, 'effect_list') or [] -%}
                                   {%- set want = (repeat.item.effect or 'None') | string | trim | lower -%}
-                                  {%- set names = ['none', 'off'] if want in ['', 'none', 'off'] else [want] -%}
-                                  {%- set ns = namespace(e='') -%}
+                                  {%- set ns = namespace(e='', off='') -%}
                                   {%- for f in fx -%}
-                                    {%- if ns.e == '' and (f | string | lower) in names -%}
+                                    {%- if ns.e == '' and (f | string | lower) == want -%}
                                       {%- set ns.e = f -%}
                                     {%- endif -%}
+                                    {%- if ns.off == '' and (f | string | lower) in ['none', 'off'] -%}
+                                      {%- set ns.off = f -%}
+                                    {%- endif -%}
                                   {%- endfor -%}
-                                  {{ dict(repeat.item.data, effect=ns.e) if ns.e else repeat.item.data }}
+                                  {#- An effect the light doesn't have stops its running one -#}
+                                  {%- set running = (state_attr(repeat.item.light, 'effect') or 'none') | string | lower not in ['none', 'off'] -%}
+                                  {%- set e = ns.e or (ns.off if running or want in ['none', 'off'] else '') -%}
+                                  {%- set d = dict(repeat.item.data, effect=e) if e else repeat.item.data -%}
+                                  {#- A 0 fade has to be sent or ESPHome uses its default fade, but not with an effect it starts -#}
+                                  {%- if transition_s | float(0) == 0 and (not e or (e | lower in ['none', 'off'] and not running)) -%}
+                                    {%- set d = dict(d, transition=0) -%}
+                                  {%- endif -%}
+                                  {{ d }}
                                 continue_on_error: true
                 - variables:
                     idx: "{{ target }}"
@@ -810,6 +841,10 @@ actions:
         type: "{{ (raw_sound.get('media_content_type') if raw_sound is mapping else '') or 'music' }}"
         player: >-
           {{ sound_player or (raw_sound.get('entity_id') if raw_sound is mapping else '') or '' }}
+
+  - variables:
+      sound_sent: >-
+        {{ now().timestamp() if snd.id != '' and snd.player != '' else sound_sent }}
 
   # The finale or turned-back sound plays in its own branch while the lights
   # run the finale and resting state
@@ -890,14 +925,41 @@ actions:
       - action: homeassistant.turn_on
         target:
           entity_id: "{{ paused }}"
-  - if:
-      - condition: template
-        value_template: "{{ prev_volume is number }}"
-    then:
-      - action: media_player.volume_set
-        target:
-          entity_id: "{{ sound_player }}"
-        data:
-          volume_level: "{{ prev_volume }}"
-        continue_on_error: true
-  - delay: !input cooldown
+  # The volume and mute go back during the cooldown, once the last sound ends
+  - parallel:
+      - delay: !input cooldown
+      - sequence:
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ (prev_volume is number or prev_muted is true) and sound_sent | float(0) > 0 }}
+            then:
+              # Music keeps the player playing, so then this runs to the timeout,
+              # 1 s before the cooldown ends so the next run reads the old volume
+              - wait_template: >-
+                  {%- set p = states[sound_player] -%}
+                  {{ p is none or (p.state not in ['playing', 'buffering']
+                     and as_timestamp(p.last_changed, 0) > sound_sent | float(0)) }}
+                timeout: "{{ [[cooldown_s | float(0) - 1, 0] | max, 30] | min }}"
+                continue_on_timeout: true
+          - if:
+              - condition: template
+                value_template: "{{ prev_volume is number }}"
+            then:
+              - action: media_player.volume_set
+                target:
+                  entity_id: "{{ sound_player }}"
+                data:
+                  volume_level: "{{ prev_volume }}"
+                continue_on_error: true
+          # After the volume, since older firmware unmutes on a volume change
+          - if:
+              - condition: template
+                value_template: "{{ prev_muted is true }}"
+            then:
+              - action: media_player.volume_mute
+                target:
+                  entity_id: "{{ sound_player }}"
+                data:
+                  is_volume_muted: true
+                continue_on_error: true
