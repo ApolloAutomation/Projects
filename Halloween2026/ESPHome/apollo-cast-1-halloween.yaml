@@ -34,6 +34,8 @@ light:
         from: 0
         to: 6
     default_transition_length: 0s
+    # Partitions skip the strip's Max Brightness, so cap them like its 50% default
+    color_correct: [50%, 50%, 50%]
     # A light restores its effect by position, so add new effects at the end
     effects: &led_segment_effects
       # Effect A and B follow the strip's Pattern and Speed settings
@@ -45,7 +47,8 @@ light:
           name: "Effect B"
           update_interval: 15ms
           lambda: "id(led_strip_slot_effect)(it, current_color, initial_run, 1);"
-      # Built-in effects run at a fixed speed
+      # Built-in effects run at a fixed speed. Flicker and Pulse are the
+      # blueprints' default stage and finale effects
       - addressable_rainbow:
           name: "Rainbow"
       - addressable_twinkle:
@@ -54,6 +57,8 @@ light:
           name: "Fireworks"
       - pulse:
           name: "Pulse"
+      - addressable_flicker:
+          name: "Flicker"
   - platform: partition
     name: "LED Segment 2"
     segments:
@@ -61,6 +66,7 @@ light:
         from: 7
         to: 13
     default_transition_length: 0s
+    color_correct: [50%, 50%, 50%]
     effects: *led_segment_effects
   - platform: partition
     name: "LED Segment 3"
@@ -69,4 +75,5 @@ light:
         from: 14
         to: 20
     default_transition_length: 0s
+    color_correct: [50%, 50%, 50%]
     effects: *led_segment_effects
